@@ -106,7 +106,9 @@ app.post("/login", async (req, res) => {
     const { username, password } = req.body;
     if (username && password) {
       const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-      const user = users.find((user) => user.username === username);
+      const user = users.find(
+        (user) => user.username === username && user.password === password,
+      );
       if (user) {
         res.status(200).json(user);
         datasendCount++;
