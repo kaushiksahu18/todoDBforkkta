@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "bun index.js"
+    "dev": "touch data.json && chmod +x ./data.json && echo '[]' >> ./data.json && bun index.js"
   },
   "keywords": [],
   "author": "",
