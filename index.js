@@ -11,7 +11,7 @@ import { z } from "zod";
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PORT = process.env.PORT || 6969;
+const PORT = process.env.PORT || 443;
 const DATA_FILE_PATH =
   process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
 
@@ -30,7 +30,7 @@ const todoSchema = z.object({
 });
 const userSchema = z.object({
   username: z.string(),
-  password: z.string().min(6),
+  password: z.string().min(3),
 });
 
 // middlewares for validation of username and password
