@@ -7,6 +7,9 @@ import cors from "cors";
 import morgan from "morgan";
 import mongoose from "mongoose";
 
+import dotenv from 'dotenv';
+dotenv.config()
+
 import {
   UserModel,
   validateUser,
