@@ -1,4 +1,3 @@
-// server.mjs
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
@@ -6,15 +5,22 @@ import path from "path";
 import fs from "fs/promises";
 import cors from "cors";
 import morgan from "morgan";
-import { z } from "zod";
+import mongoose from "mongoose";
+
+import {
+  UserModel,
+  validateUser,
+  validateTodo,
+  userSchema,
+  connectDB,
+} from "./utils.js";
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PORT = process.env.PORT || 443;
-const DATA_FILE_PATH =
-  process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
-
+const PORT = process.env.PORT || 3000;
+const DATA_FILE_PATH = path.join(__dirname, "data.json");
+const DATABASE_URL = process.env.MONGODB_DATABASE_URL || "";
 // Initilize express app
 const app = express();
 
@@ -23,55 +29,13 @@ app.use(morgan("dev")); // Logging middleware
 app.use(cors());
 app.use(express.json());
 
-// zod schema for verification
-const todoSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-});
-const userSchema = z.object({
-  username: z.string(),
-  password: z.string().min(3),
-});
-
-// middlewares for validation of username and password
-const validateUser = async (req, res, next) => {
-  try {
-    const { username, password } = req.headers;
-    if (username && password) {
-      const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-      const user = users.find((user) => user.username === username);
-      if (user) {
-        console.log("user found in DB");
-        req.username = username;
-        next();
-      } else {
-        res
-          .status(400)
-          .send("Invalid username or password: Not found user in DataBase");
-      }
-    } else {
-      res.status(400).send("Invalid username or password Input");
-    }
-  } catch (error) {
-    res.status(400).send("Invalid username or password Input");
-    console.log(error);
-  }
-};
-
-// middlewares for validation of todo
-const validateTodo = (req, res, next) => {
-  try {
-    const { title, description } = todoSchema.parse(req.body);
-    if (title && description) {
-      next();
-    } else {
-      res.status(400).send("Invalid todo Input");
-    }
-  } catch (error) {
-    res.status(400).send("Invalid todo Input");
-    console.log(error);
-  }
-};
+connectDB(DATABASE_URL);
+export const USERS = mongoose.model("User");
+// new UserModel({
+// username: "papa@pa",
+// password: "papa@p",
+// todos: [{ title: "String", description: "String" }],
+// });
 
 // REST API Endpoints
 // for User
@@ -79,17 +43,14 @@ const validateTodo = (req, res, next) => {
 app.post("/signup", async (req, res) => {
   try {
     const { username, password } = userSchema.parse(req.body);
-    const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-    const user = users.find((user) => user.username === username);
-    if (!user) {
-      const newUser = {
-        id: newId(users, 10001, 99999),
+    const query = await USERS.find({ username, password }).exec();
+    if (query.length === 0) {
+      const newUser = USERS({
         username,
         password,
         todos: [],
-      };
-      users.push(newUser);
-      await fs.writeFile(DATA_FILE_PATH, JSON.stringify(users));
+      });
+      await newUser.save();
       res.status(201).send(newUser);
     } else {
       res.status(400).send("User already exists");
@@ -105,12 +66,9 @@ app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
     if (username && password) {
-      const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-      const user = users.find(
-        (user) => user.username === username && user.password === password,
-      );
-      if (user) {
-        res.status(200).json(user);
+      const query = await USERS.find({ username, password }).exec();
+      if (query) {
+        res.status(200).json(query[0]);
         datasendCount++;
         console.log(`Data send count: ${datasendCount}`);
       } else {
@@ -129,10 +87,10 @@ app.post("/login", async (req, res) => {
 let datasendCount = 0;
 app.get("/todos", validateUser, async (req, res) => {
   try {
-    const { username } = req;
-    const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-    const userIndex = users.findIndex((user) => user.username === username);
-    res.status(200).json(users[userIndex].todos);
+    const { username, password } = req;
+    const user = await USERS.find({ username, password }).exec();
+    const todosArr = user[0].todos;
+    res.status(200).json(todosArr);
     datasendCount++;
     console.log(`Data send count: ${datasendCount}`);
   } catch (error) {
@@ -144,16 +102,15 @@ app.get("/todos", validateUser, async (req, res) => {
 // POST todos
 app.post("/addTodo", validateUser, validateTodo, async (req, res) => {
   try {
-    const { username } = req;
-    const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-    const userIndex = users.findIndex((user) => user.username === username);
+    const { username, password } = req;
+    const user = await USERS.find({ username, password }).exec();
+    const todosArr = user[0].todos;
     const newTodo = {
-      id: newId(users[userIndex].todos, 101, 999),
       ...req.body,
     };
-    users[userIndex].todos.push(newTodo);
-    await fs.writeFile(DATA_FILE_PATH, JSON.stringify(users));
-    res.status(201).json(users[userIndex].todos);
+    todosArr.push(newTodo);
+    await user[0].save();
+    res.status(201).json(todosArr);
     console.log("Todo Added Successfully");
   } catch (error) {
     res.status(500).send("Internal Server Error While Adding Todo");
@@ -164,17 +121,15 @@ app.post("/addTodo", validateUser, validateTodo, async (req, res) => {
 // DELETE todos
 app.delete("/todos/:id", validateUser, async (req, res) => {
   try {
-    const { username } = req;
-    const users = await JSON.parse(await fs.readFile(DATA_FILE_PATH, "utf8"));
-    const userIndex = users.findIndex((user) => user.username === username);
-    const index = users[userIndex].todos.findIndex(
-      (todo) => todo.id === parseInt(req.params.id),
-    );
-    if (index !== -1) {
-      users[userIndex].todos.splice(index, 1);
-      await fs.writeFile(DATA_FILE_PATH, JSON.stringify(users));
-      res.status(200).json(users[userIndex].todos);
+    const { username, password } = req;
+    const user = await USERS.find({ username, password }).exec();
+    if (user[0].todos) {
+      // Todo deleted successfully
+      user[0].todos = user[0].todos.filter((todo) => todo._id.toString() !== req.params.id);
+      await user[0].save();
+      res.status(200).json(user[0].todos);
     } else {
+      // User not found or todo not found
       res.status(404).send("Todo not found");
     }
   } catch (error) {
@@ -190,11 +145,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-const newId = (arrOFobj, min, max) => {
-  let canbenewId = Math.round(Math.random() * (max - min)) + min;
-  if (arrOFobj.some((obj) => obj.id == canbenewId)) {
-    return newId(arrOFobj, min, max);
-  }
-  return canbenewId;
-};

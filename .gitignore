@@ -1,6 +1,3 @@
 node_modules
-.config
-.upm
-package-lock.json
-.replit
-replit.nix
+bun.lockb
+.env
